@@ -111,6 +111,20 @@ devices:
 
 Der Hausverbrauch wird aus Netz, Solar und Batterie berechnet. Ein `home.entity` brauchst du nur, wenn du den Wert überschreiben oder den Verlauf per Klick öffnen willst.
 
+### `flows` (Verbindungen ausblenden)
+
+Jede Verbindung zwischen den Quellen lässt sich abschalten, im Editor unter **Verbindungen** oder per YAML. Eine abgeschaltete Verbindung wird nicht mehr angezeigt. Die Werte in den Kreisen ändern sich dadurch nicht.
+
+```yaml
+flows:
+  battery_to_grid: false    # Batterie → Netz
+  grid_to_battery: false    # Netz → Batterie
+  solar_to_grid: false      # Solar → Netz
+  solar_to_battery: false   # Solar → Batterie
+```
+
+Die Linie zwischen Netz und Batterie verschwindet erst, wenn beide Richtungen aus sind.
+
 ### `devices` (Geräte und Gruppen)
 
 | Option | Beschreibung |

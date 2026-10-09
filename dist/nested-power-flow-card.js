@@ -8,7 +8,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '1.0.0';
+  const VERSION = '1.1.0';
   const CARD = 'nested-power-flow-card';
   const EDITOR = `${CARD}-editor`;
 
@@ -27,7 +27,7 @@
     de: {
       grid: 'Netz', solar: 'Solar', battery: 'Batterie', home: 'Haus', other: 'Sonstige', device: 'Gerät',
       empty: 'Noch nichts konfiguriert. Öffne den Editor und wähle deine Sensoren aus.',
-      general: 'Allgemein', devices: 'Geräte & Gruppen',
+      general: 'Allgemein', flows: 'Verbindungen', devices: 'Geräte & Gruppen',
       devicesHint: 'Jedes Gerät kann Untergeräte haben und wird damit zur Gruppe. In der Karte klappt ein Klick auf die Gruppe ihre Untergeräte auf.',
       addTop: 'Gerät / Gruppe hinzufügen', addChild: 'Untergerät hinzufügen', remove: 'Entfernen',
       up: 'Nach oben', down: 'Nach unten', color: 'Farbe', children: 'Untergeräte', newDevice: 'Neues Gerät',
@@ -41,6 +41,8 @@
         expanded: 'Beim Laden aufgeklappt', kilo_threshold: 'Ab wie viel Watt in kW anzeigen',
         show_other: '„Sonstige“ in Gruppen anzeigen', sort: 'Nach Leistung sortieren',
         max_expected_power: 'Leistung für maximale Punkt-Geschwindigkeit (W)',
+        solar_to_grid: 'Solar → Netz anzeigen', solar_to_battery: 'Solar → Batterie anzeigen',
+        grid_to_battery: 'Netz → Batterie anzeigen', battery_to_grid: 'Batterie → Netz anzeigen',
       },
       h: {
         grid_entity: 'Positiv = Bezug, negativ = Einspeisung', battery_entity: 'Positiv = Entladen, negativ = Laden',
@@ -50,7 +52,7 @@
     en: {
       grid: 'Grid', solar: 'Solar', battery: 'Battery', home: 'Home', other: 'Other', device: 'Device',
       empty: 'Nothing configured yet. Open the editor and pick your sensors.',
-      general: 'General', devices: 'Devices & groups',
+      general: 'General', flows: 'Connections', devices: 'Devices & groups',
       devicesHint: 'Every device can have sub-devices, which turns it into a group. In the card, a click on the group unfolds its sub-devices.',
       addTop: 'Add device / group', addChild: 'Add sub-device', remove: 'Remove',
       up: 'Move up', down: 'Move down', color: 'Color', children: 'sub-devices', newDevice: 'New device',
@@ -64,6 +66,8 @@
         expanded: 'Expanded on load', kilo_threshold: 'Show kW from this many watts',
         show_other: 'Show "Other" inside groups', sort: 'Sort by power',
         max_expected_power: 'Power for maximum dot speed (W)',
+        solar_to_grid: 'Show solar → grid', solar_to_battery: 'Show solar → battery',
+        grid_to_battery: 'Show grid → battery', battery_to_grid: 'Show battery → grid',
       },
       h: {
         grid_entity: 'Positive = import, negative = export', battery_entity: 'Positive = discharging, negative = charging',
@@ -329,6 +333,12 @@
         bd = Math.max(v, 0); bc = Math.max(-v, 0);
       }
 
+      // Einzelne Verbindungen lassen sich abschalten (flows: { battery_to_grid: false })
+      const fl = c.flows || {};
+      const enabled = {
+        'solar>grid': fl.solar_to_grid !== false, 'solar>battery': fl.solar_to_battery !== false,
+        'grid>battery': fl.grid_to_battery !== false, 'battery>grid': fl.battery_to_grid !== false,
+      };
       const s2b = Math.min(sv, bc);
       const g2b = Math.min(bc - s2b, gi);
       const s2g = Math.min(sv - s2b, ge);
@@ -389,10 +399,12 @@
       }
 
       return {
-        sources, levels, home, gi, ge, sv, bd, bc, hasAnything: anySource || !!hm.entity || tree.length > 0,
+        sources, levels, home, gi, ge, sv, bd, bc, enabled, hasAnything: anySource || !!hm.entity || tree.length > 0,
         flows: {
           'solar>home': s2h, 'grid>home': g2h, 'battery>home': b2h,
-          'solar>grid': s2g, 'solar>battery': s2b, 'grid>battery': g2b, 'battery>grid': b2g,
+          // abgeschaltete Verbindungen werden nur ausgeblendet, die Bilanz bleibt gleich
+          'solar>grid': enabled['solar>grid'] ? s2g : 0, 'solar>battery': enabled['solar>battery'] ? s2b : 0,
+          'grid>battery': enabled['grid>battery'] ? g2b : 0, 'battery>grid': enabled['battery>grid'] ? b2g : 0,
         },
       };
     }
@@ -406,7 +418,8 @@
       const cx = W / 2;
       const src = m.sources;
       const xs = (src.length === 3 ? [0.17, 0.5, 0.83] : src.length === 2 ? [0.26, 0.74] : [0.5]).map((f) => f * W);
-      const needArc = src.length === 3;
+      const linked = (a, b) => m.enabled[`${a}>${b}`] || m.enabled[`${b}>${a}`];
+      const needArc = src.length === 3 && linked(src[0], src[2]);
       let y = PAD + (needArc ? 30 : 0);
       const sy = y;
       const srcLabelW = src.length ? Math.max(Ds, W / src.length - 8) : W;
@@ -425,6 +438,7 @@
       });
       for (let i = 0; i < src.length; i++) {
         for (let j = i + 1; j < src.length; j++) {
+          if (!linked(src[i], src[j])) continue;
           const pts = j === i + 1
             ? [[xs[i] + Ds / 2, sy + Ds / 2], [xs[j] - Ds / 2, sy + Ds / 2]]
             : [[xs[i], sy], [xs[i], sy - 22], [xs[j], sy - 22], [xs[j], sy]];
@@ -848,6 +862,8 @@
       { name: 'entity', selector: SENSOR }, { name: 'override_state', selector: { boolean: {} } },
       { name: 'name', selector: { text: {} } }, { name: 'icon', selector: { icon: {} } },
     ],
+    flows: ['solar_to_grid', 'solar_to_battery', 'grid_to_battery', 'battery_to_grid']
+      .map((name) => ({ name, selector: { boolean: {} } })),
     device: [
       { name: 'name', selector: { text: {} } },
       { name: 'entity', selector: SENSOR, hint: 'device_entity' },
@@ -857,7 +873,8 @@
       { name: 'expanded', selector: { boolean: {} } },
     ],
   };
-  const SECTION_ICONS = { general: 'mdi:cog', grid: 'mdi:transmission-tower', solar: 'mdi:solar-power', battery: 'mdi:battery', home: 'mdi:home' };
+  const SECTION_ICONS = { general: 'mdi:cog', grid: 'mdi:transmission-tower', solar: 'mdi:solar-power', battery: 'mdi:battery', home: 'mdi:home', flows: 'mdi:transit-connection-variant' };
+  const FLOW_DEFAULTS = { solar_to_grid: true, solar_to_battery: true, grid_to_battery: true, battery_to_grid: true };
   const GENERAL_KEYS = SCHEMAS.general.map((s) => s.name);
   const GENERAL_DEFAULTS = { show_other: true };
 
@@ -965,7 +982,7 @@
           <div id="tree"></div>
           <button class="add" id="addTop" type="button"><ha-icon icon="mdi:plus"></ha-icon>${esc(t.addTop)}</button>`;
         const sections = root.getElementById('sections');
-        ['general', 'grid', 'solar', 'battery', 'home'].forEach((key) => {
+        ['general', 'grid', 'solar', 'battery', 'home', 'flows'].forEach((key) => {
           const det = document.createElement('details');
           if (key === 'grid' && !this._config.grid && !this._config.solar && !this._config.battery) det.open = true;
           det.innerHTML = `<summary><ha-icon icon="${SECTION_ICONS[key]}"></ha-icon>${esc(t[key])}</summary><div class="body"></div>`;
@@ -977,6 +994,10 @@
                 Object.keys(GENERAL_DEFAULTS).forEach((k) => { if (v[k] === GENERAL_DEFAULTS[k]) delete v[k]; });
                 if (v.sort === false) delete v.sort;
                 Object.assign(cfg, v);
+              } else if (key === 'flows') {
+                const v = {};
+                Object.keys(FLOW_DEFAULTS).forEach((k) => { if (value[k] === false) v[k] = false; });
+                if (Object.keys(v).length) cfg.flows = v; else delete cfg.flows;
               } else {
                 const v = clean(value);
                 ['invert', 'override_state'].forEach((k) => { if (v[k] === false) delete v[k]; });
@@ -1113,7 +1134,7 @@
           GENERAL_KEYS.forEach((k) => { if (c[k] !== undefined) d[k] = c[k]; });
           form.data = d;
         } else {
-          form.data = Object.assign({}, c[key] || {});
+          form.data = Object.assign({}, key === 'flows' ? FLOW_DEFAULTS : {}, c[key] || {});
         }
       });
       const walk = (list, parent, inherit, depth) => (list || []).forEach((n, i) => {
